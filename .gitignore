@@ -5,7 +5,6 @@ local.properties
 .DS_Store
 build/
 captures
-app/build/
-library/build/
-library/src/main/libs/
-library/src/main/obj/
+android-openal/build/
+android-openal/src/main/libs/
+android-openal/src/main/obj/
