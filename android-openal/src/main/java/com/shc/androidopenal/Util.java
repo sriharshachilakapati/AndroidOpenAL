@@ -28,6 +28,6 @@ class Util
 
     static long getAddress(Buffer buffer)
     {
-        return getAddress(buffer, 0);
+        return buffer == null ? 0 : getAddress(buffer, 0);
     }
 }

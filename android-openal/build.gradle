@@ -1,6 +1,28 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'com.android.library'
+apply plugin: 'maven'
+apply plugin: 'signing'
+
+group = "com.goharsha"
+archivesBaseName = "android-openal"
+version = "0.1-SNAPSHOT"
+
+// Check if the required properties are included, so we prevent our
+// build from failing.
+if (project.hasProperty('ossrhUsername'))
+{
+    project.ext.ossrhUsername = ossrhUsername
+    project.ext.ossrhPassword = ossrhPassword
+}
+else
+{
+    // We might be running on another system where he is not
+    // the owner who can push to OSSRH through maven. Set
+    // default values so he can still build the library locally.
+    project.ext.ossrhUsername = ''
+    project.ext.ossrhPassword = ''
+}
 
 android {
     compileSdkVersion 22
@@ -10,7 +32,7 @@ android {
         minSdkVersion 21
         targetSdkVersion 22
         versionCode 1
-        versionName "0.1-SNAPSHOT"
+        versionName version
     }
 
     buildTypes {
@@ -42,4 +64,55 @@ clean.dependsOn ndkClean
 
 tasks.withType(JavaCompile) {
     compileTask -> compileTask.dependsOn ndkBuild
+}
+
+signing {
+    // Only sign the archives if there is a username. This allows one to build the library
+    // on systems with no username set.
+    if (ossrhUsername != '')
+        sign configurations.archives
+}
+
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+            repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
+                authentication(userName: project.ext.ossrhUsername, password: project.ext.ossrhPassword)
+            }
+
+            snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
+                authentication(userName: project.ext.ossrhUsername, password: project.ext.ossrhPassword)
+            }
+
+            pom.project {
+                name 'AndroidOpenAL'
+                packaging 'aar'
+                description 'OpenAL wrapper for Android. Uses OpenAL Soft and STB_Vorbis libraries.'
+                url 'http://goharsha.com/AndroidOpenAL/'
+
+                scm {
+                    connection 'scm:git:git@github.com:sriharshachilakapati/AndroidOpenAL.git'
+                    developerConnection 'scm:git:git@github.com:sriharshachilakapati/AndroidOpenAL.git'
+                    url 'git@github.com:sriharshachilakapati/AndroidOpenAL.git'
+                }
+
+                licenses {
+                    license {
+                        name 'The LGPL v3 license'
+                        url 'http://www.gnu.org/licenses/lgpl-3.0.txt'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id 'sriharshachilakapati'
+                        name 'Sri Harsha Chilakapati'
+                        email 'sriharshachilakapati@gmail.com'
+                    }
+                }
+            }
+        }
+    }
 }
