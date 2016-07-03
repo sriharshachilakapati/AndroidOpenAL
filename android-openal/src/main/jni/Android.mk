@@ -8,10 +8,13 @@ LOCAL_C_INCLUDES := $(LOCAL_PATH)/include $(LOCAL_PATH)/include/AL
 
 LOCAL_SRC_FILES := $(wildcard $(SRCDIR)/*.c) \
                    $(wildcard $(SRCDIR)/OpenAL32/*.c) \
-				   $(wildcard $(SRCDIR)/Alc/*.c)
+				   $(wildcard $(SRCDIR)/Alc/*.c) \
+				   $(wildcard $(SRCDIR)/Alc/backends/*.c) \
+				   $(wildcard $(SRCDIR)/Alc/effects/*.c) \
+				   $(wildcard $(SRCDIR)/common/*.c)
 
-LOCAL_CFLAGS     := -DAL_BUILD_LIBRARY -DAL_ALEXT_PROTOTYPES
-LOCAL_LDLIBS     := -llog -Wl,-s
+LOCAL_CFLAGS     := -DAL_ALEXT_PROTOTYPES -std=c11
+LOCAL_LDLIBS     := -llog -Wl,-s -lOpenSLES
 
 include $(BUILD_SHARED_LIBRARY)
 

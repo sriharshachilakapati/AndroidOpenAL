@@ -6,7 +6,7 @@ apply plugin: 'signing'
 
 group = "com.goharsha"
 archivesBaseName = "android-openal"
-version = "0.1-SNAPSHOT"
+version = "0.2-SNAPSHOT"
 
 // Check if the required properties are included, so we prevent our
 // build from failing.

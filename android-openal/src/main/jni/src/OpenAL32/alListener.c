@@ -13,8 +13,8 @@
  *
  * You should have received a copy of the GNU Library General Public
  *  License along with this library; if not, write to the
- *  Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- *  Boston, MA  02111-1307, USA.
+ *  Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  * Or go to http://www.gnu.org/copyleft/lgpl.html
  */
 
@@ -26,459 +26,505 @@
 #include "alListener.h"
 #include "alSource.h"
 
-AL_API ALvoid AL_APIENTRY alListenerf(ALenum eParam, ALfloat flValue)
+AL_API ALvoid AL_APIENTRY alListenerf(ALenum param, ALfloat value)
 {
-    ALCcontext *pContext;
-    ALboolean updateAll = AL_FALSE;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
+    context = GetContextRef();
+    if(!context) return;
 
-    switch(eParam)
+    WriteLock(&context->PropLock);
+    switch(param)
     {
+    case AL_GAIN:
+        if(!(value >= 0.0f && isfinite(value)))
+            SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+        context->Listener->Gain = value;
+        break;
+
+    case AL_METERS_PER_UNIT:
+        if(!(value >= 0.0f && isfinite(value)))
+            SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+        context->Listener->MetersPerUnit = value;
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
+
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
+}
+
+
+AL_API ALvoid AL_APIENTRY alListener3f(ALenum param, ALfloat value1, ALfloat value2, ALfloat value3)
+{
+    ALCcontext *context;
+
+    context = GetContextRef();
+    if(!context) return;
+
+    WriteLock(&context->PropLock);
+    switch(param)
+    {
+    case AL_POSITION:
+        if(!(isfinite(value1) && isfinite(value2) && isfinite(value3)))
+            SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+        context->Listener->Position[0] = value1;
+        context->Listener->Position[1] = value2;
+        context->Listener->Position[2] = value3;
+        break;
+
+    case AL_VELOCITY:
+        if(!(isfinite(value1) && isfinite(value2) && isfinite(value3)))
+            SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+        context->Listener->Velocity[0] = value1;
+        context->Listener->Velocity[1] = value2;
+        context->Listener->Velocity[2] = value3;
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
+
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
+}
+
+
+AL_API ALvoid AL_APIENTRY alListenerfv(ALenum param, const ALfloat *values)
+{
+    ALCcontext *context;
+
+    if(values)
+    {
+        switch(param)
+        {
         case AL_GAIN:
-            if(flValue >= 0.0f)
-            {
-                pContext->Listener.Gain = flValue;
-                updateAll = AL_TRUE;
-            }
-            else
-                alSetError(pContext, AL_INVALID_VALUE);
-            break;
-
         case AL_METERS_PER_UNIT:
-            if(flValue > 0.0f)
-            {
-                pContext->Listener.MetersPerUnit = flValue;
-                updateAll = AL_TRUE;
-            }
-            else
-                alSetError(pContext, AL_INVALID_VALUE);
-            break;
+            alListenerf(param, values[0]);
+            return;
 
-        default:
-            alSetError(pContext, AL_INVALID_ENUM);
-            break;
-    }
-
-    // Force updating the sources for these parameters, since even head-
-    // relative sources are affected
-    if(updateAll)
-    {
-        ALsizei pos;
-        for(pos = 0;pos < pContext->SourceMap.size;pos++)
-        {
-            ALsource *source = pContext->SourceMap.array[pos].value;
-            source->NeedsUpdate = AL_TRUE;
-        }
-    }
-
-    ProcessContext(pContext);
-}
-
-
-AL_API ALvoid AL_APIENTRY alListener3f(ALenum eParam, ALfloat flValue1, ALfloat flValue2, ALfloat flValue3)
-{
-    ALCcontext *pContext;
-    ALboolean updateWorld = AL_FALSE;
-
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    switch(eParam)
-    {
-        case AL_POSITION:
-            pContext->Listener.Position[0] = flValue1;
-            pContext->Listener.Position[1] = flValue2;
-            pContext->Listener.Position[2] = flValue3;
-            updateWorld = AL_TRUE;
-            break;
-
-        case AL_VELOCITY:
-            pContext->Listener.Velocity[0] = flValue1;
-            pContext->Listener.Velocity[1] = flValue2;
-            pContext->Listener.Velocity[2] = flValue3;
-            updateWorld = AL_TRUE;
-            break;
-
-        default:
-            alSetError(pContext, AL_INVALID_ENUM);
-            break;
-    }
-
-    if(updateWorld)
-    {
-        ALsizei pos;
-        for(pos = 0;pos < pContext->SourceMap.size;pos++)
-        {
-            ALsource *source = pContext->SourceMap.array[pos].value;
-            if(!source->bHeadRelative)
-                source->NeedsUpdate = AL_TRUE;
-        }
-    }
-
-    ProcessContext(pContext);
-}
-
-
-AL_API ALvoid AL_APIENTRY alListenerfv(ALenum eParam, const ALfloat *pflValues)
-{
-    ALCcontext *pContext;
-    ALboolean updateWorld = AL_FALSE;
-
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    if(pflValues)
-    {
-        switch(eParam)
-        {
-            case AL_GAIN:
-            case AL_METERS_PER_UNIT:
-                alListenerf(eParam, pflValues[0]);
-                break;
-
-            case AL_POSITION:
-            case AL_VELOCITY:
-                alListener3f(eParam, pflValues[0], pflValues[1], pflValues[2]);
-                break;
-
-            case AL_ORIENTATION:
-                // AT then UP
-                pContext->Listener.Forward[0] = pflValues[0];
-                pContext->Listener.Forward[1] = pflValues[1];
-                pContext->Listener.Forward[2] = pflValues[2];
-                pContext->Listener.Up[0] = pflValues[3];
-                pContext->Listener.Up[1] = pflValues[4];
-                pContext->Listener.Up[2] = pflValues[5];
-                updateWorld = AL_TRUE;
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
-    }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
-
-    if(updateWorld)
-    {
-        ALsizei pos;
-        for(pos = 0;pos < pContext->SourceMap.size;pos++)
-        {
-            ALsource *source = pContext->SourceMap.array[pos].value;
-            if(!source->bHeadRelative)
-                source->NeedsUpdate = AL_TRUE;
-        }
-    }
-
-    ProcessContext(pContext);
-}
-
-
-AL_API ALvoid AL_APIENTRY alListeneri(ALenum eParam, ALint lValue)
-{
-    ALCcontext *pContext;
-
-    (void)lValue;
-
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    switch(eParam)
-    {
-        default:
-            alSetError(pContext, AL_INVALID_ENUM);
-            break;
-    }
-
-    ProcessContext(pContext);
-}
-
-
-AL_API void AL_APIENTRY alListener3i(ALenum eParam, ALint lValue1, ALint lValue2, ALint lValue3)
-{
-    ALCcontext *pContext;
-
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    switch(eParam)
-    {
         case AL_POSITION:
         case AL_VELOCITY:
-            alListener3f(eParam, (ALfloat)lValue1, (ALfloat)lValue2, (ALfloat)lValue3);
-            break;
-
-        default:
-            alSetError(pContext, AL_INVALID_ENUM);
-            break;
+            alListener3f(param, values[0], values[1], values[2]);
+            return;
+        }
     }
 
-    ProcessContext(pContext);
+    context = GetContextRef();
+    if(!context) return;
+
+    WriteLock(&context->PropLock);
+    if(!(values))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
+    {
+    case AL_ORIENTATION:
+        if(!(isfinite(values[0]) && isfinite(values[1]) && isfinite(values[2]) &&
+             isfinite(values[3]) && isfinite(values[4]) && isfinite(values[5])))
+            SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+        /* AT then UP */
+        context->Listener->Forward[0] = values[0];
+        context->Listener->Forward[1] = values[1];
+        context->Listener->Forward[2] = values[2];
+        context->Listener->Up[0] = values[3];
+        context->Listener->Up[1] = values[4];
+        context->Listener->Up[2] = values[5];
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
+
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API void AL_APIENTRY alListeneriv( ALenum eParam, const ALint* plValues )
+AL_API ALvoid AL_APIENTRY alListeneri(ALenum param, ALint UNUSED(value))
 {
-    ALCcontext *pContext;
-    ALfloat flValues[6];
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
+    context = GetContextRef();
+    if(!context) return;
 
-    if(plValues)
+    WriteLock(&context->PropLock);
+    switch(param)
     {
-        switch(eParam)
-        {
-            case AL_POSITION:
-            case AL_VELOCITY:
-                flValues[0] = (ALfloat)plValues[0];
-                flValues[1] = (ALfloat)plValues[1];
-                flValues[2] = (ALfloat)plValues[2];
-                alListenerfv(eParam, flValues);
-                break;
-
-            case AL_ORIENTATION:
-                flValues[0] = (ALfloat)plValues[0];
-                flValues[1] = (ALfloat)plValues[1];
-                flValues[2] = (ALfloat)plValues[2];
-                flValues[3] = (ALfloat)plValues[3];
-                flValues[4] = (ALfloat)plValues[4];
-                flValues[5] = (ALfloat)plValues[5];
-                alListenerfv(eParam, flValues);
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
 
-    ProcessContext(pContext);
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API ALvoid AL_APIENTRY alGetListenerf(ALenum eParam, ALfloat *pflValue)
+AL_API void AL_APIENTRY alListener3i(ALenum param, ALint value1, ALint value2, ALint value3)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    if(pflValue)
+    switch(param)
     {
-        switch(eParam)
-        {
-            case AL_GAIN:
-                *pflValue = pContext->Listener.Gain;
-                break;
-
-            case AL_METERS_PER_UNIT:
-                *pflValue = pContext->Listener.MetersPerUnit;
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
+    case AL_POSITION:
+    case AL_VELOCITY:
+        alListener3f(param, (ALfloat)value1, (ALfloat)value2, (ALfloat)value3);
+        return;
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
 
-    ProcessContext(pContext);
+    context = GetContextRef();
+    if(!context) return;
+
+    WriteLock(&context->PropLock);
+    switch(param)
+    {
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
+
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API ALvoid AL_APIENTRY alGetListener3f(ALenum eParam, ALfloat *pflValue1, ALfloat *pflValue2, ALfloat *pflValue3)
+AL_API void AL_APIENTRY alListeneriv(ALenum param, const ALint *values)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    if(pflValue1 && pflValue2 && pflValue3)
+    if(values)
     {
-        switch(eParam)
+        ALfloat fvals[6];
+        switch(param)
         {
-            case AL_POSITION:
-                *pflValue1 = pContext->Listener.Position[0];
-                *pflValue2 = pContext->Listener.Position[1];
-                *pflValue3 = pContext->Listener.Position[2];
-                break;
+        case AL_POSITION:
+        case AL_VELOCITY:
+            alListener3f(param, (ALfloat)values[0], (ALfloat)values[1], (ALfloat)values[2]);
+            return;
 
-            case AL_VELOCITY:
-                *pflValue1 = pContext->Listener.Velocity[0];
-                *pflValue2 = pContext->Listener.Velocity[1];
-                *pflValue3 = pContext->Listener.Velocity[2];
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
+        case AL_ORIENTATION:
+            fvals[0] = (ALfloat)values[0];
+            fvals[1] = (ALfloat)values[1];
+            fvals[2] = (ALfloat)values[2];
+            fvals[3] = (ALfloat)values[3];
+            fvals[4] = (ALfloat)values[4];
+            fvals[5] = (ALfloat)values[5];
+            alListenerfv(param, fvals);
+            return;
         }
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
 
-    ProcessContext(pContext);
+    context = GetContextRef();
+    if(!context) return;
+
+    WriteLock(&context->PropLock);
+    if(!(values))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
+    {
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+    if(!ATOMIC_LOAD(&context->DeferUpdates, almemory_order_acquire))
+    {
+        UpdateListenerProps(context);
+        UpdateAllSourceProps(context);
+    }
+
+done:
+    WriteUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API ALvoid AL_APIENTRY alGetListenerfv(ALenum eParam, ALfloat *pflValues)
+AL_API ALvoid AL_APIENTRY alGetListenerf(ALenum param, ALfloat *value)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
+    context = GetContextRef();
+    if(!context) return;
 
-    if(pflValues)
+    ReadLock(&context->PropLock);
+    if(!(value))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
     {
-        switch(eParam)
-        {
-            case AL_GAIN:
-                pflValues[0] = pContext->Listener.Gain;
-                break;
+    case AL_GAIN:
+        *value = context->Listener->Gain;
+        break;
 
-            case AL_METERS_PER_UNIT:
-                pflValues[0] = pContext->Listener.MetersPerUnit;
-                break;
+    case AL_METERS_PER_UNIT:
+        *value = context->Listener->MetersPerUnit;
+        break;
 
-            case AL_POSITION:
-                pflValues[0] = pContext->Listener.Position[0];
-                pflValues[1] = pContext->Listener.Position[1];
-                pflValues[2] = pContext->Listener.Position[2];
-                break;
-
-            case AL_VELOCITY:
-                pflValues[0] = pContext->Listener.Velocity[0];
-                pflValues[1] = pContext->Listener.Velocity[1];
-                pflValues[2] = pContext->Listener.Velocity[2];
-                break;
-
-            case AL_ORIENTATION:
-                // AT then UP
-                pflValues[0] = pContext->Listener.Forward[0];
-                pflValues[1] = pContext->Listener.Forward[1];
-                pflValues[2] = pContext->Listener.Forward[2];
-                pflValues[3] = pContext->Listener.Up[0];
-                pflValues[4] = pContext->Listener.Up[1];
-                pflValues[5] = pContext->Listener.Up[2];
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
 
-    ProcessContext(pContext);
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API ALvoid AL_APIENTRY alGetListeneri(ALenum eParam, ALint *plValue)
+AL_API ALvoid AL_APIENTRY alGetListener3f(ALenum param, ALfloat *value1, ALfloat *value2, ALfloat *value3)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
+    context = GetContextRef();
+    if(!context) return;
 
-    if(plValue)
+    ReadLock(&context->PropLock);
+    if(!(value1 && value2 && value3))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
     {
-        switch(eParam)
-        {
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
-    }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
+    case AL_POSITION:
+        *value1 = context->Listener->Position[0];
+        *value2 = context->Listener->Position[1];
+        *value3 = context->Listener->Position[2];
+        break;
 
-    ProcessContext(pContext);
+    case AL_VELOCITY:
+        *value1 = context->Listener->Velocity[0];
+        *value2 = context->Listener->Velocity[1];
+        *value3 = context->Listener->Velocity[2];
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API void AL_APIENTRY alGetListener3i(ALenum eParam, ALint *plValue1, ALint *plValue2, ALint *plValue3)
+AL_API ALvoid AL_APIENTRY alGetListenerfv(ALenum param, ALfloat *values)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
-
-    if(plValue1 && plValue2 && plValue3)
+    switch(param)
     {
-        switch (eParam)
-        {
-            case AL_POSITION:
-                *plValue1 = (ALint)pContext->Listener.Position[0];
-                *plValue2 = (ALint)pContext->Listener.Position[1];
-                *plValue3 = (ALint)pContext->Listener.Position[2];
-                break;
+    case AL_GAIN:
+    case AL_METERS_PER_UNIT:
+        alGetListenerf(param, values);
+        return;
 
-            case AL_VELOCITY:
-                *plValue1 = (ALint)pContext->Listener.Velocity[0];
-                *plValue2 = (ALint)pContext->Listener.Velocity[1];
-                *plValue3 = (ALint)pContext->Listener.Velocity[2];
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
+    case AL_POSITION:
+    case AL_VELOCITY:
+        alGetListener3f(param, values+0, values+1, values+2);
+        return;
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
 
-    ProcessContext(pContext);
+    context = GetContextRef();
+    if(!context) return;
+
+    ReadLock(&context->PropLock);
+    if(!(values))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
+    {
+    case AL_ORIENTATION:
+        // AT then UP
+        values[0] = context->Listener->Forward[0];
+        values[1] = context->Listener->Forward[1];
+        values[2] = context->Listener->Forward[2];
+        values[3] = context->Listener->Up[0];
+        values[4] = context->Listener->Up[1];
+        values[5] = context->Listener->Up[2];
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
 }
 
 
-AL_API void AL_APIENTRY alGetListeneriv(ALenum eParam, ALint* plValues)
+AL_API ALvoid AL_APIENTRY alGetListeneri(ALenum param, ALint *value)
 {
-    ALCcontext *pContext;
+    ALCcontext *context;
 
-    pContext = GetContextSuspended();
-    if(!pContext) return;
+    context = GetContextRef();
+    if(!context) return;
 
-    if(plValues)
+    ReadLock(&context->PropLock);
+    if(!(value))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
     {
-        switch(eParam)
-        {
-            case AL_POSITION:
-                plValues[0] = (ALint)pContext->Listener.Position[0];
-                plValues[1] = (ALint)pContext->Listener.Position[1];
-                plValues[2] = (ALint)pContext->Listener.Position[2];
-                break;
-
-            case AL_VELOCITY:
-                plValues[0] = (ALint)pContext->Listener.Velocity[0];
-                plValues[1] = (ALint)pContext->Listener.Velocity[1];
-                plValues[2] = (ALint)pContext->Listener.Velocity[2];
-                break;
-
-            case AL_ORIENTATION:
-                // AT then UP
-                plValues[0] = (ALint)pContext->Listener.Forward[0];
-                plValues[1] = (ALint)pContext->Listener.Forward[1];
-                plValues[2] = (ALint)pContext->Listener.Forward[2];
-                plValues[3] = (ALint)pContext->Listener.Up[0];
-                plValues[4] = (ALint)pContext->Listener.Up[1];
-                plValues[5] = (ALint)pContext->Listener.Up[2];
-                break;
-
-            default:
-                alSetError(pContext, AL_INVALID_ENUM);
-                break;
-        }
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
     }
-    else
-        alSetError(pContext, AL_INVALID_VALUE);
 
-    ProcessContext(pContext);
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
+}
+
+
+AL_API void AL_APIENTRY alGetListener3i(ALenum param, ALint *value1, ALint *value2, ALint *value3)
+{
+    ALCcontext *context;
+
+    context = GetContextRef();
+    if(!context) return;
+
+    ReadLock(&context->PropLock);
+    if(!(value1 && value2 && value3))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch (param)
+    {
+    case AL_POSITION:
+        *value1 = (ALint)context->Listener->Position[0];
+        *value2 = (ALint)context->Listener->Position[1];
+        *value3 = (ALint)context->Listener->Position[2];
+        break;
+
+    case AL_VELOCITY:
+        *value1 = (ALint)context->Listener->Velocity[0];
+        *value2 = (ALint)context->Listener->Velocity[1];
+        *value3 = (ALint)context->Listener->Velocity[2];
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
+}
+
+
+AL_API void AL_APIENTRY alGetListeneriv(ALenum param, ALint* values)
+{
+    ALCcontext *context;
+
+    switch(param)
+    {
+    case AL_POSITION:
+    case AL_VELOCITY:
+        alGetListener3i(param, values+0, values+1, values+2);
+        return;
+    }
+
+    context = GetContextRef();
+    if(!context) return;
+
+    ReadLock(&context->PropLock);
+    if(!(values))
+        SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
+    switch(param)
+    {
+    case AL_ORIENTATION:
+        // AT then UP
+        values[0] = (ALint)context->Listener->Forward[0];
+        values[1] = (ALint)context->Listener->Forward[1];
+        values[2] = (ALint)context->Listener->Forward[2];
+        values[3] = (ALint)context->Listener->Up[0];
+        values[4] = (ALint)context->Listener->Up[1];
+        values[5] = (ALint)context->Listener->Up[2];
+        break;
+
+    default:
+        SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
+    }
+
+done:
+    ReadUnlock(&context->PropLock);
+    ALCcontext_DecRef(context);
+}
+
+
+void UpdateListenerProps(ALCcontext *context)
+{
+    ALlistener *listener = context->Listener;
+    struct ALlistenerProps *props;
+
+    /* Get an unused proprty container, or allocate a new one as needed. */
+    props = ATOMIC_LOAD(&listener->FreeList, almemory_order_acquire);
+    if(!props)
+        props = al_calloc(16, sizeof(*props));
+    else
+    {
+        struct ALlistenerProps *next;
+        do {
+            next = ATOMIC_LOAD(&props->next, almemory_order_relaxed);
+        } while(ATOMIC_COMPARE_EXCHANGE_WEAK(struct ALlistenerProps*,
+                &listener->FreeList, &props, next, almemory_order_seq_cst,
+                almemory_order_consume) == 0);
+    }
+
+    /* Copy in current property values. */
+    ATOMIC_STORE(&props->Position[0], listener->Position[0], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Position[1], listener->Position[1], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Position[2], listener->Position[2], almemory_order_relaxed);
+
+    ATOMIC_STORE(&props->Velocity[0], listener->Velocity[0], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Velocity[1], listener->Velocity[1], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Velocity[2], listener->Velocity[2], almemory_order_relaxed);
+
+    ATOMIC_STORE(&props->Forward[0], listener->Forward[0], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Forward[1], listener->Forward[1], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Forward[2], listener->Forward[2], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Up[0], listener->Up[0], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Up[1], listener->Up[1], almemory_order_relaxed);
+    ATOMIC_STORE(&props->Up[2], listener->Up[2], almemory_order_relaxed);
+
+    ATOMIC_STORE(&props->Gain, listener->Gain, almemory_order_relaxed);
+    ATOMIC_STORE(&props->MetersPerUnit, listener->MetersPerUnit, almemory_order_relaxed);
+
+    ATOMIC_STORE(&props->DopplerFactor, context->DopplerFactor, almemory_order_relaxed);
+    ATOMIC_STORE(&props->DopplerVelocity, context->DopplerVelocity, almemory_order_relaxed);
+    ATOMIC_STORE(&props->SpeedOfSound, context->SpeedOfSound, almemory_order_relaxed);
+
+    /* Set the new container for updating internal parameters. */
+    props = ATOMIC_EXCHANGE(struct ALlistenerProps*, &listener->Update, props, almemory_order_acq_rel);
+    if(props)
+    {
+        /* If there was an unused update container, put it back in the
+         * freelist.
+         */
+        struct ALlistenerProps *first = ATOMIC_LOAD(&listener->FreeList);
+        do {
+            ATOMIC_STORE(&props->next, first, almemory_order_relaxed);
+        } while(ATOMIC_COMPARE_EXCHANGE_WEAK(struct ALlistenerProps*,
+                &listener->FreeList, &first, props) == 0);
+    }
 }
