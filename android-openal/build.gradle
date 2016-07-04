@@ -46,6 +46,13 @@ android {
     sourceSets.main.jniLibs.srcDirs = ['src/main/libs']
 }
 
+task javadoc(type: Javadoc) {
+    source = android.sourceSets.main.java.srcDirs
+    classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+    destinationDir = file("build/docs/javadoc/")
+    failOnError false
+}
+
 task ndkClean(type: Exec) {
     if (Os.isFamily(Os.FAMILY_WINDOWS))
         commandLine 'cmd', "/c", "${System.env.ANDROID_NDK_HOME}\\ndk-build.cmd", "clean", "-C", file('src/main/jni/').absolutePath
