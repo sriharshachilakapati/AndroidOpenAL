@@ -1,4 +1,3 @@
-#ifdef PROTECT_MIXER_INC_C_INC
 #include "config.h"
 
 #include "alMain.h"
@@ -115,4 +114,3 @@ skip_stepping:
         OutPos += todo;
     }
 }
-#endif
